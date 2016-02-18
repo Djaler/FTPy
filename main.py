@@ -1,125 +1,152 @@
-import ftplib
-import re
+from re import findall
 import sys
 
-from PyQt4.QtCore import SIGNAL
-from PyQt4.QtGui import QApplication, QWidget, QVBoxLayout, QTreeWidget, \
-    QTreeWidgetItem, QDesktopWidget, QLineEdit, QLabel, QPushButton, \
-    QMessageBox, QFileDialog
+from PyQt4 import QtCore
+from PyQt4 import QtGui
+
+from ftp import FTPProtocol
 
 
-class MainWindow(QWidget):
+class MainWindow(QtGui.QWidget):
+    download_progress_signal = QtCore.pyqtSignal(int)
+    
     def __init__(self):
         super().__init__()
-
-        self.ftp = None
-        self.current_server = ''
+        
+        self.ftp = FTPProtocol()
+        self.file_types = {'d': 'Папка', 'l': 'Ссылка', '-': 'Файл'}
+        self.download_progress_signal.connect(self.progress,
+                                              QtCore.Qt.QueuedConnection)
 
         self._init_ui()
 
     def _init_ui(self):
-        self.main_widget = QVBoxLayout(self)
+        self.main_layout = QtGui.QVBoxLayout(self)
+
+        self.main_layout.addWidget(QtGui.QLabel('Адрес FTP-сервера:'))
         
-        self.main_widget.addWidget(QLabel('Адрес FTP-сервера:'))
-        
-        self.url_edit = QLineEdit()
-        self.connect(self.url_edit, SIGNAL('textEdited(QString)'),
+        self.url_edit = QtGui.QLineEdit()
+        self.connect(self.url_edit, QtCore.SIGNAL('textEdited(QString)'),
                      self.url_edited)
-        self.main_widget.addWidget(self.url_edit)
+        self.main_layout.addWidget(self.url_edit)
         
-        self.connect_btn = QPushButton('Подключиться')
-        self.connect_btn.setEnabled(False)
-        self.connect(self.connect_btn, SIGNAL('pressed()'), self.ftp_connect)
-        self.main_widget.addWidget(self.connect_btn)
-
-        self.path_label = QLabel()
+        self.connect_btn = QtGui.QPushButton('Подключиться')
+        self.connect_btn.setDisabled(True)
+        self.connect(self.connect_btn, QtCore.SIGNAL('pressed()'),
+                     self.ftp_connect)
+        self.main_layout.addWidget(self.connect_btn)
+        
+        self.path_label = QtGui.QLabel()
         self.path_label.hide()
-        self.main_widget.addWidget(self.path_label)
-
-        self.tree_widget = QTreeWidget()
+        self.main_layout.addWidget(self.path_label)
+        
+        self.tree_widget = QtGui.QTreeWidget()
         self.tree_widget.setColumnCount(2)
         self.tree_widget.setHeaderLabels(['Имя', 'Тип'])
         self.tree_widget.setRootIsDecorated(False)
         self.connect(self.tree_widget,
-                     SIGNAL('itemDoubleClicked(QTreeWidgetItem*, int)'),
+                     QtCore.SIGNAL('itemDoubleClicked(QTreeWidgetItem*, int)'),
                      self.double_click)
         self.tree_widget.hide()
-        self.main_widget.addWidget(self.tree_widget)
+        self.main_layout.addWidget(self.tree_widget)
         
-        self.setLayout(self.main_widget)
-        self.setWindowTitle('FTP Client')
+        self.progress_window = QtGui.QDialog(self)
+        self.progress_window.setWindowTitle('Загрузка')
+        self.progress_window.setModal(True)
+        progress_layout = QtGui.QHBoxLayout()
+        self.progress_bar = QtGui.QProgressBar()
+        progress_layout.addWidget(self.progress_bar)
+        self.finish_download_btn = QtGui.QPushButton()
+        self.finish_download_btn.setIcon(QtGui.QIcon('cancel.svg'))
+        self.finish_download_btn.setIconSize(QtCore.QSize(24, 24))
+        self.finish_download_btn.setFocusPolicy(QtCore.Qt.NoFocus)
+        progress_layout.addWidget(self.finish_download_btn)
+        self.progress_window.setLayout(progress_layout)
+        
+        self.setLayout(self.main_layout)
+        self.setWindowTitle('FTPy')
         self.center()
         self.show()
-
+    
     def url_edited(self, url):
-        self.connect_btn.setEnabled(url != self.current_server)
-
+        self.connect_btn.setDisabled(url == self.ftp.current_server or not url)
+    
     def ftp_connect(self):
-        if self.ftp:
-            self.ftp.quit()
         try:
-            self.ftp = ftplib.FTP(self.url_edit.text())
+            self.ftp.connect(self.url_edit.text())
             self.ftp.login()
-        except ftplib.all_errors:
-            QMessageBox().warning(self, 'Ошибка',
-                                  'Невозможно подключиться к серверу')
+        except self.ftp.exceptions:
+            QtGui.QMessageBox().warning(self, 'Ошибка',
+                                        'Невозможно подключиться к серверу')
+            self.path_label.hide()
+            self.tree_widget.hide()
         else:
+            self.path_label.show()
+            self.tree_widget.show()
             self.load()
-
+        finally:
+            self.adjustSize()
+            self.connect_btn.setEnabled(False)
+    
     def load(self):
-        self.connect_btn.setEnabled(False)
-
-        path = re.findall('.*"(.*)".*', self.ftp.sendcmd('pwd'))[0]
+        path = self.ftp.pwd
         self.path_label.setText(path)
-        self.path_label.show()
-
-        self.tree_widget.clear()
-        self.tree_widget.show()
         
-        ls = []
-        self.ftp.dir(ls.append)
-
+        self.tree_widget.clear()
+        
+        ls = self.ftp.ls
+        
         if path != '/':
-            self.tree_widget.addTopLevelItem(QTreeWidgetItem(['..', 'Папка']))
+            self.tree_widget.addTopLevelItem(
+                QtGui.QTreeWidgetItem(['..', 'Папка']))
         
         for line in ls:
-            name = \
-                re.findall('^([^\s]+\s+){8}(.+)$', line)[0][1].split(' -> ')[0]
-            file_type = 'Папка' if line.startswith(
-                'd') else 'Ссылка' if line.startswith('l') else 'Файл'
+            name = findall('^([^\s]+\s+){8}(.+)$', line)[0][1].split(' -> ')[0]
+            file_type = self.file_types[line[0]]
             self.tree_widget.addTopLevelItem(
-                QTreeWidgetItem([name, file_type]))
-
+                QtGui.QTreeWidgetItem([name, file_type]))
+    
     def open(self, directory_name):
         self.ftp.cwd(directory_name)
         self.load()
     
     def download(self, file_name):
-        save_location = QFileDialog().getSaveFileName(self, 'Сохранение файла')
-
+        save_location = QtGui.QFileDialog().getSaveFileName(self,
+                                                            'Сохранение файла')
+        
         if not save_location:
             return
+        
+        self.progress_bar.setMaximum(self.ftp.get_size(file_name))
+        self.progress_bar.setValue(0)
+        self.progress_window.show()
 
-        with open(save_location, 'wb') as f:
-            self.ftp.retrbinary('RETR ' + file_name, f.write)
+        self.ftp.download(file_name, save_location,
+                          self.download_progress_signal)
+
+    def progress(self, value):
+        self.progress_bar.setValue(self.progress_bar.value() + value)
+        if self.progress_bar.value() == self.progress_bar.maximum():
+            self.progress_window.close()
     
-    def double_click(self, item: QTreeWidgetItem):
+    def double_click(self, item: QtGui.QTreeWidgetItem):
         try:
             self.open(item.text(0))
-        except ftplib.error_perm:
+        except self.ftp.exceptions:
             try:
                 self.download(item.text(0))
-            except ftplib.error_perm:
-                QMessageBox().warning(self, 'Ошибка', 'Ошибка доступа к файлу')
+            except self.ftp.exceptions:
+                QtGui.QMessageBox().warning(self, 'Ошибка',
+                                            'Ошибка доступа к файлу')
     
     def center(self):
         qr = self.frameGeometry()
-        cp = QDesktopWidget().availableGeometry().center()
+        cp = QtGui.QDesktopWidget().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
 
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
+    app = QtGui.QApplication(sys.argv)
     window = MainWindow()
     sys.exit(app.exec_())
