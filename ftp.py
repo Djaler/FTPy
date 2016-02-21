@@ -53,6 +53,12 @@ class FTPProtocol(object):
     def get_size(self, file_name):
         return self._connection.size(file_name)
 
+    def download_cancel(self):
+        try:
+            self._connection.sendcmd('ABOR')
+        except ftplib.error_temp:
+            pass
+
     @thread
     def download(self, file_name, save_path, signal):
         with open(save_path, 'wb') as f:

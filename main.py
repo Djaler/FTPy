@@ -9,20 +9,20 @@ from ftp import FTPProtocol
 
 class MainWindow(QtGui.QWidget):
     download_progress_signal = QtCore.pyqtSignal(int)
-    
+    file_types = {'d': 'Папка', 'l': 'Ссылка', '-': 'Файл'}
+
     def __init__(self):
         super().__init__()
         
         self.ftp = FTPProtocol()
-        self.file_types = {'d': 'Папка', 'l': 'Ссылка', '-': 'Файл'}
         self.download_progress_signal.connect(self.progress,
                                               QtCore.Qt.QueuedConnection)
-
+        
         self._init_ui()
-
+    
     def _init_ui(self):
         self.main_layout = QtGui.QVBoxLayout(self)
-
+        
         self.main_layout.addWidget(QtGui.QLabel('Адрес FTP-сервера:'))
         
         self.url_edit = QtGui.QLineEdit()
@@ -56,11 +56,12 @@ class MainWindow(QtGui.QWidget):
         progress_layout = QtGui.QHBoxLayout()
         self.progress_bar = QtGui.QProgressBar()
         progress_layout.addWidget(self.progress_bar)
-        self.finish_download_btn = QtGui.QPushButton()
-        self.finish_download_btn.setIcon(QtGui.QIcon('cancel.svg'))
-        self.finish_download_btn.setIconSize(QtCore.QSize(24, 24))
-        self.finish_download_btn.setFocusPolicy(QtCore.Qt.NoFocus)
-        progress_layout.addWidget(self.finish_download_btn)
+        self.cancel_download_btn = QtGui.QPushButton()
+        self.cancel_download_btn.setIcon(QtGui.QIcon('cancel.svg'))
+        self.cancel_download_btn.setIconSize(QtCore.QSize(24, 24))
+        self.connect(self.cancel_download_btn, QtCore.SIGNAL('pressed()'),
+                     self.download_cancel)
+        progress_layout.addWidget(self.cancel_download_btn)
         self.progress_window.setLayout(progress_layout)
         
         self.setLayout(self.main_layout)
@@ -123,12 +124,16 @@ class MainWindow(QtGui.QWidget):
 
         self.ftp.download(file_name, save_location,
                           self.download_progress_signal)
-
+    
     def progress(self, value):
         self.progress_bar.setValue(self.progress_bar.value() + value)
         if self.progress_bar.value() == self.progress_bar.maximum():
             self.progress_window.close()
     
+    def download_cancel(self):
+        self.ftp.download_cancel()
+        self.progress_window.close()
+
     def double_click(self, item: QtGui.QTreeWidgetItem):
         try:
             self.open(item.text(0))
