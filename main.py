@@ -49,7 +49,7 @@ class MainWindow(QtGui.QWidget):
                      self.double_click)
         self.tree_widget.hide()
         self.main_layout.addWidget(self.tree_widget)
-        
+
         self.progress_window = QtGui.QDialog(self)
         self.progress_window.setWindowTitle('Загрузка')
         self.progress_window.setModal(True)
@@ -70,9 +70,9 @@ class MainWindow(QtGui.QWidget):
         self.show()
 
     def _init_icons(self):
-        self.folder_icon = QtGui.QIcon('folder.svg')
-        self.file_icon = QtGui.QIcon('file.svg')
-        self.cancel_icon = QtGui.QIcon('cancel.svg')
+        self.folder_icon = QtGui.QIcon('icons/folder.svg')
+        self.file_icon = QtGui.QIcon('icons/file.svg')
+        self.cancel_icon = QtGui.QIcon('icons/cancel.svg')
 
     def url_edited(self, url):
         self.connect_btn.setDisabled(url == self.ftp.current_server or not url)

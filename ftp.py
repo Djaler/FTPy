@@ -15,26 +15,17 @@ class FTPProtocol(object):
     ls_format = re.compile('^([^\s]+\s+){4}(\d+)\s([^\s]+\s+){3}(.+)$')
 
     def __init__(self):
-        self._connection = None
-        self._current_server = ''
+        self._connection = ftplib.FTP()
 
     @property
     def current_server(self):
-        return self._current_server
+        return self._connection.host
 
     def connect(self, url):
-        if self._connection:
-            self.disconnect()
         try:
-            self._connection = ftplib.FTP(url)
+            self._connection.connect(url)
         except ftplib.all_errors:
             raise
-        else:
-            self._current_server = url
-
-    def disconnect(self):
-        self._connection.quit()
-        self._current_server = ''
 
     def login(self, user=None, password=None):
         self._connection.login(user, password)
