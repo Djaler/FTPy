@@ -1,5 +1,4 @@
-from re import findall
-import sys
+from sys import argv, exit
 
 from PyQt4 import QtCore
 from PyQt4 import QtGui
@@ -9,7 +8,6 @@ from ftp import FTPProtocol
 
 class MainWindow(QtGui.QWidget):
     download_progress_signal = QtCore.pyqtSignal(int)
-    file_types = {'d': 'Папка', 'l': 'Ссылка', '-': 'Файл'}
 
     def __init__(self):
         super().__init__()
@@ -21,6 +19,8 @@ class MainWindow(QtGui.QWidget):
         self._init_ui()
     
     def _init_ui(self):
+        self._init_icons()
+
         self.main_layout = QtGui.QVBoxLayout(self)
         
         self.main_layout.addWidget(QtGui.QLabel('Адрес FTP-сервера:'))
@@ -42,7 +42,7 @@ class MainWindow(QtGui.QWidget):
         
         self.tree_widget = QtGui.QTreeWidget()
         self.tree_widget.setColumnCount(2)
-        self.tree_widget.setHeaderLabels(['Имя', 'Тип'])
+        self.tree_widget.setHeaderLabels(['Имя', 'Размер'])
         self.tree_widget.setRootIsDecorated(False)
         self.connect(self.tree_widget,
                      QtCore.SIGNAL('itemDoubleClicked(QTreeWidgetItem*, int)'),
@@ -57,7 +57,7 @@ class MainWindow(QtGui.QWidget):
         self.progress_bar = QtGui.QProgressBar()
         progress_layout.addWidget(self.progress_bar)
         self.cancel_download_btn = QtGui.QPushButton()
-        self.cancel_download_btn.setIcon(QtGui.QIcon('cancel.svg'))
+        self.cancel_download_btn.setIcon(self.cancel_icon)
         self.cancel_download_btn.setIconSize(QtCore.QSize(24, 24))
         self.connect(self.cancel_download_btn, QtCore.SIGNAL('pressed()'),
                      self.download_cancel)
@@ -68,7 +68,12 @@ class MainWindow(QtGui.QWidget):
         self.setWindowTitle('FTPy')
         self.center()
         self.show()
-    
+
+    def _init_icons(self):
+        self.folder_icon = QtGui.QIcon('folder.svg')
+        self.file_icon = QtGui.QIcon('file.svg')
+        self.cancel_icon = QtGui.QIcon('cancel.svg')
+
     def url_edited(self, url):
         self.connect_btn.setDisabled(url == self.ftp.current_server or not url)
     
@@ -76,7 +81,7 @@ class MainWindow(QtGui.QWidget):
         try:
             self.ftp.connect(self.url_edit.text())
             self.ftp.login()
-        except self.ftp.exceptions:
+        except self.ftp.all_errors:
             QtGui.QMessageBox().warning(self, 'Ошибка',
                                         'Невозможно подключиться к серверу')
             self.path_label.hide()
@@ -94,18 +99,17 @@ class MainWindow(QtGui.QWidget):
         self.path_label.setText(path)
         
         self.tree_widget.clear()
-        
-        ls = self.ftp.ls
-        
+
         if path != '/':
-            self.tree_widget.addTopLevelItem(
-                QtGui.QTreeWidgetItem(['..', 'Папка']))
+            item = QtGui.QTreeWidgetItem(['..', '4096'])
+            item.setIcon(0, self.folder_icon)
+            self.tree_widget.addTopLevelItem(item)
         
-        for line in ls:
-            name = findall('^([^\s]+\s+){8}(.+)$', line)[0][1].split(' -> ')[0]
-            file_type = self.file_types[line[0]]
-            self.tree_widget.addTopLevelItem(
-                QtGui.QTreeWidgetItem([name, file_type]))
+        for name, size, is_directory in self.ftp.ls:
+            item = QtGui.QTreeWidgetItem([name, size])
+            item.setIcon(0,
+                         self.folder_icon if is_directory else self.file_icon)
+            self.tree_widget.addTopLevelItem(item)
     
     def open(self, directory_name):
         self.ftp.cwd(directory_name)
@@ -117,8 +121,8 @@ class MainWindow(QtGui.QWidget):
         
         if not save_location:
             return
-        
-        self.progress_bar.setMaximum(self.ftp.get_size(file_name))
+
+        self.progress_bar.setMaximum(self.ftp.size(file_name))
         self.progress_bar.setValue(0)
         self.progress_window.show()
 
@@ -131,16 +135,16 @@ class MainWindow(QtGui.QWidget):
             self.progress_window.close()
     
     def download_cancel(self):
-        self.ftp.download_cancel()
+        self.ftp.cancel_download()
         self.progress_window.close()
 
     def double_click(self, item: QtGui.QTreeWidgetItem):
         try:
             self.open(item.text(0))
-        except self.ftp.exceptions:
+        except self.ftp.all_errors:
             try:
                 self.download(item.text(0))
-            except self.ftp.exceptions:
+            except self.ftp.all_errors:
                 QtGui.QMessageBox().warning(self, 'Ошибка',
                                             'Ошибка доступа к файлу')
     
@@ -152,6 +156,6 @@ class MainWindow(QtGui.QWidget):
 
 
 if __name__ == '__main__':
-    app = QtGui.QApplication(sys.argv)
+    app = QtGui.QApplication(argv)
     window = MainWindow()
-    sys.exit(app.exec_())
+    exit(app.exec_())

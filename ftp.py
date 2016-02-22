@@ -1,17 +1,19 @@
 import ftplib
 import re
-import threading
+from threading import Thread
 
 
 def thread(my_func):
     def wrapper(*args, **kwargs):
-        my_thread = threading.Thread(target=my_func, args=args, kwargs=kwargs)
+        my_thread = Thread(target=my_func, args=args, kwargs=kwargs)
         my_thread.start()
 
     return wrapper
 
 
 class FTPProtocol(object):
+    ls_format = re.compile('^([^\s]+\s+){4}(\d+)\s([^\s]+\s+){3}(.+)$')
+
     def __init__(self):
         self._connection = None
         self._current_server = ''
@@ -45,15 +47,22 @@ class FTPProtocol(object):
     def ls(self):
         ls = []
         self._connection.dir(ls.append)
-        return ls
+
+        files = []
+        for line in ls:
+            file = re.findall(self.ls_format, line)[0]
+            size = file[1]
+            name = file[3].split(' -> ')[0]
+            files.append((name, size, line.startswith('d')))
+        return files
 
     def cwd(self, directory):
         self._connection.cwd(directory)
 
-    def get_size(self, file_name):
+    def size(self, file_name):
         return self._connection.size(file_name)
 
-    def download_cancel(self):
+    def cancel_download(self):
         try:
             self._connection.sendcmd('ABOR')
         except ftplib.error_temp:
@@ -69,5 +78,5 @@ class FTPProtocol(object):
             self._connection.retrbinary('RETR ' + file_name, callback)
 
     @property
-    def exceptions(self):
+    def all_errors(self):
         return ftplib.all_errors
