@@ -22,13 +22,24 @@ class FTPProtocol(object):
         return self._connection.host
 
     def connect(self, url):
+        if self.current_server:
+            self.disconnect()
         try:
             self._connection.connect(url)
         except ftplib.all_errors:
             raise
 
-    def login(self, user=None, password=None):
-        self._connection.login(user, password)
+    def size(self, file_name):
+        return self._connection.size(file_name)
+
+    def disconnect(self):
+        self._connection.quit()
+
+    def login(self, user=None, password=None, anonymous=False):
+        if anonymous:
+            self._connection.login()
+        else:
+            self._connection.login(user, password)
 
     @property
     def pwd(self):
@@ -50,14 +61,21 @@ class FTPProtocol(object):
     def cwd(self, directory):
         self._connection.cwd(directory)
 
-    def size(self, file_name):
-        return self._connection.size(file_name)
-
     def cancel_download(self):
         try:
             self._connection.sendcmd('ABOR')
         except ftplib.error_temp:
             pass
+
+    @thread
+    def upload(self, location, file_name, signal):
+        with open(location) as f:
+            def callback(chunk):
+                signal.emit(len(chunk))
+
+            self._connection.storbinary('STOR ' + file_name, f,
+                                        callback=callback)
+        signal.emit(-1)
 
     @thread
     def download(self, file_name, save_path, signal):
@@ -67,6 +85,7 @@ class FTPProtocol(object):
                 signal.emit(len(chunk))
 
             self._connection.retrbinary('RETR ' + file_name, callback)
+        signal.emit(-1)
 
     @property
     def all_errors(self):
